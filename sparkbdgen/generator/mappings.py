@@ -16,6 +16,24 @@ def rotation_matrix_3d(theta: np.float64, axis: int) -> result:
     return result
 
 
+def normalize(arr: np.ndarray) -> np.ndarray:
+    norm = np.linalg.norm(arr)
+    if norm > 0:
+        return arr/norm
+    return arr
+
+def rodrigues(axis: np.ndarray, theta: np.float64):
+    assert len(axis) == 3
+    arr = normalize(axis)
+    cos = np.cos(theta)
+    sin = np.sin(theta)
+    return cos*np.identity(3) + (1-cos)*np.outer(arr, arr) + sin*np.array([
+        [0, -arr[2], arr[1]],
+        [arr[2], 0, -arr[0]],
+        [-arr[1], arr[0], 0],
+    ], np.float64)
+
+
 class LinearMapping(object):
 
     def __init__(self, matrix: np.ndarray) -> None:
@@ -30,8 +48,18 @@ class LinearMapping(object):
             raise ValueError(f"Invalid dimension: {size}")
         return cls(np.identity(size, np.float64))
 
+    def rotation2D(self, theta: np.float64):
+        assert self.matrix.shape == (2, 2)
+        sint = np.sin(theta)
+        cost = np.cos(theta)
+        matrix = np.array([
+            [cost,-sint],
+            [sint,cost]
+        ])
+        return LinearMapping(np.dot(matrix, self.matrix))
+
     @classmethod
-    def rotation2D(cls, theta: np.float64):
+    def Rotation2D(cls, theta: np.float64):
         sint = np.sin(theta)
         cost = np.cos(theta)
         return cls(np.array([
@@ -40,12 +68,21 @@ class LinearMapping(object):
         ]))
 
     @classmethod
-    def rotation3D(cls, roll: np.float64=0, pitch: np.float64=0, yaw: np.float64=0):
+    def Rotation3D(cls, roll: np.float64=0, pitch: np.float64=0, yaw: np.float64=0):
         matrix = np.identity(3, np.float64)
         for axis, theta in enumerate([roll, pitch, yaw]):
             if theta != 0:
-                matrix = np.dot(matrix, rotation_matrix_3d(theta, axis))
+                matrix = np.dot(rotation_matrix_3d(theta, axis), matrix)
         return cls(matrix)
+
+    def rodrigues(self, axis: np.ndarray, theta: np.float64):
+        assert self.matrix.shape == (3, 3)
+        matrix = rodrigues(axis, theta)
+        return LinearMapping(np.dot(matrix, self.matrix))
+
+    @classmethod
+    def Rodrigues(cls, axis: np.ndarray, theta: np.float64):
+        return cls(rodrigues(axis, theta))
 
 
 class SequenceMapping(object):
