@@ -1,8 +1,9 @@
-from typing import Any, Callable, List, Tuple, Type
-import typing
+from typing import Callable, List
 import numpy as np
 from .types import DISTRIBUTION_FUNC, ARRAY_MAPPING
 
+
+__all__ = ["ClusterBase", "SingleCluster", "CombinataryCluster"]
 
 class ClusterBase(object):
 
@@ -78,28 +79,3 @@ class CombinataryCluster(ClusterBase):
                 result[index] = self.mapping(array)
         
         return result
-
-class ClustersGenerator():
-
-    def __init__(self, dimension: int, clusters: List[ClusterBase]) -> None:
-        self.dimension = dimension
-        for cluster in clusters:
-            assert cluster.dimension() == self.dimension, f"dimension: {cluster.dimension()}, {self.dimension}"
-        self.clusters = clusters
-
-    def generate(self, counts: List[int], shifts: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        assert shifts.shape[1] == self.dimension
-        assert len(counts) == len(self.clusters) == shifts.shape[0]
-        cluster_datas = []
-        cluster_labels = []
-        for label in range(len(counts)):
-            count = counts[label]
-            cluster = self.clusters[label]
-            shift = shifts[label]
-            data = cluster.generate(count)
-            data += shift
-            cluster_datas.append(data)
-            cluster_labels.append(np.array([label]*count))
-        features = np.concatenate(cluster_datas)
-        labels = np.concatenate(cluster_labels)
-        return features, labels 

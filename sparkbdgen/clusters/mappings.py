@@ -1,11 +1,16 @@
-from typing import List, Callable
-from unittest import result
+from typing import List
 import numpy as np
-from .types import ARRAY_MAPPING
-from .types import DISTRIBUTION_FUNC
+from .types import *
 
 
-def rotation_matrix_3d(theta: np.float64, axis: int) -> result:
+__all__ = [
+    "LinearMapping", "CartesianSphereMapping", "NoiceMapping",
+    "SequenceMapping", 
+    "polar_spherical_mapping"
+]
+
+
+def rotation_matrix_3d(theta: np.float64, axis: int) -> np.ndarray:
     sint = np.sin(theta)
     cost = np.cos(theta)
     result = np.identity(3)
