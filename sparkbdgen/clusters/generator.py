@@ -22,7 +22,7 @@ class ClustersGenerator():
         assert len(counts) == len(self.clusters)
         cluster_datas = []
         cluster_labels = []
-        shifts = self.shifter(self.dimension, len(self.clusters))
+        shifts = self.shifter(len(self.clusters), self.dimension)
         for label in range(len(counts)):
             count = counts[label]
             cluster = self.clusters[label]
