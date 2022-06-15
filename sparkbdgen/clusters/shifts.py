@@ -70,13 +70,17 @@ def random_vectors_by_partition(n: int, dimension: int)  -> List[List[float]]:
     return ramdom_vectors_by_blocks(n, fragments)
 
 
-def grid_centers(n: int, dimension: int, mapping: Callable[[np.float64], np.float64]=None) -> np.ndarray:
+def grid_centers(n: int, dimension: int, mapping: Callable[[np.ndarray], np.ndarray]=None) -> np.ndarray:
     if mapping is None:
         return np.array(random_vectors_by_partition(n, dimension))
     else:
-        return np.vectorize(mapping)(np.array(random_vectors_by_partition(n, dimension)))
+        # return np.vectorize(mapping)(np.array(random_vectors_by_partition(n, dimension)))
+        vectors = [mapping(np.array(v)) for v in random_vectors_by_partition(n, dimension)]
+
+        return np.array(vectors)
+
     
 
 
-def grid(mapping: Callable[[np.float64], np.float64]=None) -> CLUSTER_SHIFT:
+def grid(mapping: Callable[[np.ndarray], np.ndarray]=None) -> CLUSTER_SHIFT:
     return partial(grid_centers, mapping=mapping)
