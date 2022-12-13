@@ -1,5 +1,7 @@
+from importlib.metadata import distribution
 from typing import List
 import numpy as np
+from pandas import array
 from .types import *
 
 
@@ -146,4 +148,45 @@ class NoiceMapping(object):
         for i in range(d):
             arrays[:, i] += self.distribution(count)
         
+        return arrays
+
+
+class HyperplaneMapping(object):
+
+    def __init__(self, vector: np.ndarray, d: np.float64):
+        if vector[-1] == 0:
+            raise ValueError("require: vector[-1] != 0.")
+        self._vector = vector
+        self._factors = vector[:-1]
+        self._div = 1/vector[-1]
+        # self._l2 = np.sqrt(np.sum(vector*vector))
+        self._distance = d
+        self._dimension = len(vector)
+
+    def __call__(self, arrays: np.ndarray) -> np.ndarray:
+        count, dimension = arrays.shape
+        if(dimension!=self._dimension):
+            raise ValueError(f"Invalid dimension: {dimension}, reuqired: {self._dimension}")
+
+        for i in range(count):
+            arrays[i, -1] = (self._distance - arrays[i, :-1]*self._factors)*self._div
+        return arrays
+    
+
+class VectorNoice(object):
+    
+    def __init__(self, distribution: DISTRIBUTION_FUNC,  vector: np.ndarray):
+        self._vector = vector
+        self._norm = np.linalg.norm(vector)
+        self._norm_vector = vector/self.norm
+        self._dist = distribution
+        self._dimension = len(vector)
+    
+    def __call__(self, arrays: np.ndarray) -> np.ndarray:
+        count, dimension = arrays.shape
+        if(dimension!=self._dimension):
+            raise ValueError(f"Invalid dimension: {dimension}, reuqired: {self._dimension}")
+        dists = self._dist(count)
+
+        arrays += np.outer(dists, self._norm_vector)
         return arrays
