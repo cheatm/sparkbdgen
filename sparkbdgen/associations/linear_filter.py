@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from itertools import combinations
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Iterable
 
 import numpy as np
 import pandas as pd
@@ -48,8 +48,6 @@ def midsolve(matrix: np.ndarray, begin: int, l: int):
     """
     if l == 0:
         return 
-    if len(matrix) != (1 << l):
-        raise ValueError(f"Require: 2^l == len of matrix. Find: 2^l = {1 << l}, matrix length = {len(matrix)}")
 
     l -= 1
     size = 1 << l
@@ -180,6 +178,118 @@ def disjointset(itemlist: List[List[int]]) -> Dict[int, set] :
     return dsets
 
 
+@dataclass
+class Batch:
+
+    freqent: List[int]
+    items: List[Tuple[List[int], float]]
+    
+    def __post_init__(self):
+        self.freqent.sort()
+        self.itempos = {}
+        for i, item in enumerate(self.freqent):
+            self.itempos[item] = i
+        self.L = len(self.freqent)
+        self.N = 1 << self.L
+
+    def bisupports(self) -> np.ndarray:
+        l = len(self.freqent)
+        size = 1 << l
+        sarray = np.zeros((size,), float)
+        sarray[0] = 1
+        for items, support in self.items:
+            sarray[self.biindex(items)] = support
+
+        return sarray
+    
+    def biindex(self, items: List[int]):
+        index = 0
+        for item in items:
+            index += 1 << self.itempos[item]
+        return index
+
+
+def require(condition: bool, msg: str):
+    if not condition:
+        raise ValueError(f"Require: {msg}")
+
+
+def basic_solution(l: int, A: np.ndarray, Y: np.ndarray, frees: list, solids: list) -> np.ndarray:
+    n, m = A.shape
+    require(n == len(Y), "len(A) = len(Y)")
+    require(len(frees)+len(solids) == m, "len(frees) + len(solids) = width(A)")
+
+    INV = combination_matrix_inv(l)[:, solids]
+    X = INV.dot(Y)[solids]
+    freeX: np.ndarray = None
+        
+    vcount = len(frees)
+    # find valid vertex
+    Sx = (INV.dot(A)[solids][:, frees] * (-1))
+    for items in combinations(reversed(range(m)), n):
+        B = A[:, items]
+        if np.linalg.matrix_rank(B) != n:
+            continue
+        Xb = np.linalg.inv(B).dot(Y)
+        if xavailable(Xb):
+            if freeX is None:
+                freeX = get_free_vector(Xb, items, frees, m)
+            else:
+                freeX = randomVector(freeX, get_free_vector(Xb, items, frees, m))
+            vcount -= 1
+            if vcount == 0:
+                break
+    
+    require(freeX is not None, "No vertex found")
+    print(freeX)
+    S = Sx.dot(freeX) + X
+    R = np.zeros((m, ), float)
+
+    for i, s in enumerate(solids):
+        R[s] = S[i]
+
+    for i, f in enumerate(frees):
+        R[f] = freeX[i]
+
+    return R
+
+
+def get_free_vector(X: np.ndarray, items: list, frees: list, m: int):
+    T = np.zeros((m,))
+    for i in range(len(items)):
+        T[items[i]] = X[i]
+    return T[frees]
+
+
+def completeX(X: np.ndarray, index: Iterable, n: int):
+    R = np.zeros(n)
+    for i, x in enumerate(index):
+        R[x] = X[i]
+    return R
+
+
+def randomVector(source: np.ndarray, target: np.ndarray):
+    vector = target - source
+    distance = np.sqrt(sum([v**2 for v in vector]))
+    return source + np.random.rand() * distance * vector
+
+
+def xavailable(X: np.ndarray):
+    for x in X:
+        if x < 0:
+            return False
+    return True  
+
+
+
+def freeindex(Y: np.ndarray):
+    r = []
+    for i, y in enumerate(Y):
+        if y == 0:
+            r.append(i)
+    return r
+
+
 def test_bascket():
     batches = basket([0.5, 0.5, 0.5])
     print(batches)
@@ -198,11 +308,99 @@ def test_matrix(l: int=3):
 def test_disjoint_set():
     pass
 
+
+def expand_matrix(l: int, freeindex: list):
+    EX = np.zeros((1 << l, len(freeindex)), int)
+    for i, n in enumerate(freeindex):
+        EX[n, i] = 1 
+    return EX
+
+
+def test_expand(batch: Batch):
+    l = batch.L
+    Y = batch.bisupports()
+
+    n = 1 << l
+    M = combination_matrix(l)
+    MI = combination_matrix_inv(l)
+    freenums = freeindex(Y)
+    Y[freenums] = 0.1
+
+    EX = expand_matrix(l, freenums)
+    print(np.concatenate([M, EX], axis=1))
+    print(MI.dot(EX))
+    df = pd.DataFrame(MI.dot(EX))
+    df["Y"] = Y
+
+    print(df)
+
+
+def limit_matrix(l: int, Y: np.ndarray, limit: float=0.1):
+    frees = []
+    Y = Y.copy()
+    
+    for i, y in enumerate(Y):
+        if not (y > 0):
+            Y[i] = limit
+            frees.append(i)
+    
+    EX = np.zeros((len(Y), len(frees)), int)
+    for i, f, in enumerate(frees):
+        EX[f, i] = 1
+
+    size = 1 << l
+    M = combination_matrix(l)
+
+    return np.concatenate([M, EX], axis=1), Y, list(range(size)), list(range(size, size+len(frees)))
     
 
+
+
+def test_basic_solution(batch: Batch):
+
+    Y = batch.bisupports()
+
+    # frees = []
+    # solids = []
+    # for i, y in enumerate(Y):
+    #     if y > 0:
+    #         solids.append(i)
+    #     else:
+    #         frees.append(i)
+    # M = combination_matrix(batch.L)
+
+    M, Y, solids, frees = limit_matrix(batch.L, Y, 0.2)
+
+    R = basic_solution(batch.L, M[solids], Y[solids], frees, solids)
+    df = pd.DataFrame(M)
+    X = R[:1<<batch.L]
+    df["X"] = X
+    df["Y"] = M[:, :1<<batch.L].dot(X)
+    print(df)
+    
+
+    
 def main():
     # test_bascket()
-    test_matrix()
+    # test_matrix()
+
+    batch = Batch(
+        [0, 1, 2, 3],
+        [
+                # ([0, 1, 2], 0.1),
+            ([0, 1], 0.25),
+            ([1, 2], 0.25),
+            ([2, 3], 0.25),
+            # ([0, 3], 0.25),
+            ([0], 0.5),
+            ([1], 0.5),
+            ([2], 0.5),
+            ([3], 0.5),
+        ]
+    )
+    # test_expand(batch)
+
+    test_basic_solution(batch)
 
 
 
