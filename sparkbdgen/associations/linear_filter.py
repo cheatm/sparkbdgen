@@ -226,7 +226,7 @@ def basic_solution(l: int, A: np.ndarray, Y: np.ndarray, frees: list, solids: li
     vcount = len(frees)
     # find valid vertex
     Sx = (INV.dot(A)[solids][:, frees] * (-1))
-    for items in combinations(reversed(range(m)), n):
+    for items in rcombinations(m, n):
         B = A[:, items]
         if np.linalg.matrix_rank(B) != n:
             continue
@@ -254,6 +254,104 @@ def basic_solution(l: int, A: np.ndarray, Y: np.ndarray, frees: list, solids: li
     return R
 
 
+def align_index(xindex: list, vindex: list):
+    l = 0
+    x = 0
+    v = 0
+    xtarget = []
+    vtarget = []
+    while x < len(xindex) and v < len(vindex):
+        if xindex[x] < vindex[v]:
+            x += 1
+        elif xindex[x] > vindex[v]:
+            v += 1
+        else:
+            xtarget.append(x)
+            vtarget.append(v)
+            l += 1
+            x += 1
+            v += 1
+
+    return l, xtarget, vtarget
+
+
+def rcombinations(m: int, n: int):
+    for items in combinations(reversed(range(m)), n):
+        yield list(reversed(items))
+
+
+def smerge(r: list, l1: list, l2: list):
+    i = 0
+    i1 = 0
+    i2 = 0
+    while i1 < len(l1) and i2 < len(l2):
+        if l1[i1] < l2[i2]:
+            r[i] = l1[i1]
+            i1 += 1
+        else:
+            r[i] = l2[i2]
+            i2 += 1
+        i += 1
+
+    while i1 < len(l1):
+        r[i] = l1[i1]
+        i1 += 1
+        i += 1
+    
+    while i2 < len(l2):
+        r[i] = l2[i2]
+        i2 += 1
+        i += 1
+
+
+def scombinations(parents: list, subs: list):
+    l = len(parents)
+    yield list(parents)
+    for s in range(1, l):
+        if s > len(subs):
+            break
+        for pitems in combinations(parents, l - s):
+            for sitems in combinations(reversed(subs), s):
+                sitems = list(reversed(sitems))
+                comb = [0] * l
+                smerge(comb, pitems, sitems)
+                yield comb
+
+
+def search_available(A: np.ndarray, Y: np.ndarray, xindex: list, vindex: list):
+    n, m = A.shape
+    lv = len(vindex)
+    freeX: np.ndarray = None
+    rcount = len(vindex)
+
+    searched = 0
+    # for items in combinations(range(m), n):
+    # for items in rcombinations(m, n):
+    for items in scombinations(vindex, xindex):
+        searched += 1        
+        lenght, xtargets, vtargets = align_index(items, vindex)
+        if lenght == 0:
+            continue
+        B = A[:, items]
+        if np.linalg.matrix_rank(B) != n:
+            continue
+        Xb = np.linalg.inv(B).dot(Y)
+        if xavailable(Xb):
+            vertex = np.zeros((lv,), float)
+            vertex[vtargets] = Xb[xtargets]
+            
+            print("searched:", searched)
+            print(items, vtargets, vertex)
+            if freeX is None:
+                freeX = vertex
+            else:
+                freeX = randomVector(freeX, vertex, lambda: 0.5)
+                rcount -= 1
+                if rcount == 0:
+                    break
+    return freeX
+
+
 def get_free_vector(X: np.ndarray, items: list, frees: list, m: int):
     T = np.zeros((m,))
     for i in range(len(items)):
@@ -268,10 +366,9 @@ def completeX(X: np.ndarray, index: Iterable, n: int):
     return R
 
 
-def randomVector(source: np.ndarray, target: np.ndarray):
+def randomVector(source: np.ndarray, target: np.ndarray, random_gen=np.random.rand):
     vector = target - source
-    distance = np.sqrt(sum([v**2 for v in vector]))
-    return source + np.random.rand() * distance * vector
+    return source + random_gen() * vector
 
 
 def xavailable(X: np.ndarray):
@@ -354,6 +451,55 @@ def limit_matrix(l: int, Y: np.ndarray, limit: float=0.1):
     return np.concatenate([M, EX], axis=1), Y, list(range(size)), list(range(size, size+len(frees)))
     
 
+def coefficient_array(n: int, l: int):
+    size = 1 << l
+    array = np.zeros((size,))
+    array[n] = 1
+    fill_co_array(array, n, 0, l)
+
+
+def fill_co_array(array: np.ndarray, n: int, start: int, l: int):
+    if l == 0:
+        return
+    l -= 1
+    size = 1 << l
+    mid = start+size
+    if n < mid:
+        fill_co_array(array, n, start, l)
+        array[mid:mid+size] = array[start:mid]
+    elif n > mid:
+        fill_co_array(array, n, mid, l)
+    else:
+        end = mid + size
+        start = mid
+        size = 1
+        mid = start + size
+        while mid + size <= end:
+            array[mid:mid+size] = array[start:mid]
+            size = size << 1
+            mid = start + size
+
+
+def fill_co_inv_array(array: np.ndarray, n: int, start: int, l: int):
+    if l == 0:
+        return
+    l -= 1
+    size = 1 << l
+    mid = start+size
+    if n < mid:
+        fill_co_inv_array(array, n, start, l)
+        array[mid:mid+size] = -array[start:mid]
+    elif n > mid:
+        fill_co_inv_array(array, n, mid, l)
+    else:
+        end = mid + size
+        start = mid
+        size = 1
+        mid = start + size
+        while mid + size <= end:
+            array[mid:mid+size] = -array[start:mid]
+            size = size << 1
+            mid = start + size
 
 
 def test_basic_solution(batch: Batch):
@@ -379,7 +525,60 @@ def test_basic_solution(batch: Batch):
     print(df)
     
 
-    
+def test_co_array(l: int=3):
+    size = 1 << l
+    A = np.zeros((size, size), int)
+    INVA = np.zeros((size, size), int)
+    for n in range(size):
+        # A[n][n] = 1
+        # fill_co_array(A[n], n, 0, l)
+        INVA[n][n] = 1
+        fill_co_inv_array(INVA[n], n, 0, l)
+
+    # print(A)
+    print(INVA)
+
+
+def test_basic():
+
+    # Y = basket([0.5, 0.5, 0.5])
+    batch = Batch(
+        [0, 1, 2, 3],
+        [
+                # ([0, 1, 2], 0.1),
+            ([0, 1], 0.25),
+            ([1, 2], 0.25),
+            ([2, 3], 0.25),
+            # ([0, 3], 0.25),
+            ([0], 0.5),
+            ([1], 0.5),
+            ([2], 0.5),
+            ([3], 0.5),
+        ]
+    )
+    Y = batch.bisupports()
+    A = combination_matrix(4)
+    vindex = []
+    yindex = []
+    for i, y in enumerate(Y):
+        if y == 0:
+            vindex.append(i)
+        else:
+            yindex.append(i)
+    # print(Y)
+    # print(vindex)
+    vertex = search_available(A[yindex], Y[yindex], yindex, vindex)
+    print(vertex)
+
+
+def test_comb():
+
+    # for items in scombinations([0, 1, 2], [4, 5, 6]):
+    for items in rcombinations(4, 2):
+        print(items)
+
+
+
 def main():
     # test_bascket()
     # test_matrix()
@@ -400,8 +599,10 @@ def main():
     )
     # test_expand(batch)
 
-    test_basic_solution(batch)
-
+    # test_basic_solution(batch)
+    # test_co_array()
+    test_basic()
+    # test_comb()
 
 
 if __name__ == "__main__":
