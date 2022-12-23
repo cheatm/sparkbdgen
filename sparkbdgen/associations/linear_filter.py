@@ -59,6 +59,25 @@ def midsolve(matrix: np.ndarray, begin: int, l: int):
     midsolve(matrix, mid, l)
 
 
+def solveY(Y: np.ndarray, l: int):
+    X = Y.copy()
+    midsolve(X, 0, l)
+    return X
+
+
+def solve_full_rank(Y: np.ndarray, l: int):
+    X = Y.copy()
+    midsolve(X, 0, l)
+    return X
+
+
+def solution_matrix(l: int, xindex: list, yindex: list):
+    A = combination_matrix(l)
+    A[xindex, :] = 0
+    midsolve(A, 0, l)
+    return A[yindex][:,xindex]
+
+
 def combination_matrix(l: int) -> np.ndarray:
     """generate matrix like:
     >>> [[A, A]
@@ -254,27 +273,6 @@ def basic_solution(l: int, A: np.ndarray, Y: np.ndarray, frees: list, solids: li
     return R
 
 
-def align_index(xindex: list, vindex: list):
-    l = 0
-    x = 0
-    v = 0
-    xtarget = []
-    vtarget = []
-    while x < len(xindex) and v < len(vindex):
-        if xindex[x] < vindex[v]:
-            x += 1
-        elif xindex[x] > vindex[v]:
-            v += 1
-        else:
-            xtarget.append(x)
-            vtarget.append(v)
-            l += 1
-            x += 1
-            v += 1
-
-    return l, xtarget, vtarget
-
-
 def rcombinations(m: int, n: int):
     for items in combinations(reversed(range(m)), n):
         yield list(reversed(items))
@@ -318,39 +316,91 @@ def scombinations(parents: list, subs: list):
                 yield comb
 
 
-def search_available(A: np.ndarray, Y: np.ndarray, xindex: list, vindex: list):
+def align_index(xindex: list, independents: list):
+    l = 0
+    x = 0
+    v = 0
+    xtarget = []
+    vtarget = []
+    while x < len(xindex) and v < len(independents):
+        if xindex[x] < independents[v]:
+            x += 1
+        elif xindex[x] > independents[v]:
+            v += 1
+        else:
+            xtarget.append(x)
+            vtarget.append(v)
+            l += 1
+            x += 1
+            v += 1
+
+    return l, xtarget, vtarget
+
+
+                
+
+
+def search_available(A: np.ndarray, Y: np.ndarray, independents: list):
     n, m = A.shape
-    lv = len(vindex)
-    freeX: np.ndarray = None
-    rcount = len(vindex)
+    # lv = len(independents)
+    rcount = len(independents)
+
+    matrix = pd.DataFrame(A)
+    matrix["Y"] = Y
+    print(matrix)
 
     searched = 0
-    # for items in combinations(range(m), n):
-    # for items in rcombinations(m, n):
-    for items in scombinations(vindex, xindex):
+    solutions = np.zeros((rcount, m))
+    searched_counts = np.zeros((rcount, ), int)
+    scount = 0
+    ed = set(independents)
+    for items in rcombinations(m, n):
         searched += 1        
-        lenght, xtargets, vtargets = align_index(items, vindex)
-        if lenght == 0:
-            continue
+        # lenght, xtargets, vtargets = align_index(items, independents)
+        # if lenght == 0:
+        #     continue
         B = A[:, items]
         if np.linalg.matrix_rank(B) != n:
             continue
         Xb = np.linalg.inv(B).dot(Y)
         if xavailable(Xb):
-            vertex = np.zeros((lv,), float)
-            vertex[vtargets] = Xb[xtargets]
+            solutions[scount, items] = Xb
+
+            has_new = False
+            for k in list(ed):
+                if solutions[scount, k] != 0 :
+                    ed.discard(k)
+                    has_new = True
             
-            print("searched:", searched)
-            print(items, vtargets, vertex)
-            if freeX is None:
-                freeX = vertex
-            else:
-                freeX = randomVector(freeX, vertex, lambda: 0.5)
-                rcount -= 1
-                if rcount == 0:
+            if has_new:
+                searched_counts[scount] = searched
+                scount += 1
+                if len(ed) == 0:
                     break
+                if scount == len(solutions):
+                    break
+    
+    sdf = pd.DataFrame(solutions[:scount], searched_counts[:scount])
+    print(sdf[independents])
+
+    freeX = solutions[0, independents]
+    for i in range(1, scount):
+        # freeX = randomVector(freeX, solutions[i, independents])
+        solutions[i, independents] = randomVector(solutions[i-1, independents], solutions[i, independents])
+
+    print(pd.DataFrame(solutions[:scount, independents], columns=independents))
+    freeX = solutions[scount-1, independents]
     return freeX
 
+
+def basic_solution_matrix(L: int, dependents: list, indpendents: list):
+    A = combination_matrix(L)
+    for i in indpendents:
+        A[i, :] = 0
+    
+    midsolve(A, 0, L)
+    return A[dependents][:,indpendents]
+    
 
 def get_free_vector(X: np.ndarray, items: list, frees: list, m: int):
     T = np.zeros((m,))
@@ -378,7 +428,6 @@ def xavailable(X: np.ndarray):
     return True  
 
 
-
 def freeindex(Y: np.ndarray):
     r = []
     for i, y in enumerate(Y):
@@ -386,6 +435,26 @@ def freeindex(Y: np.ndarray):
             r.append(i)
     return r
 
+
+def float_random_solution(L: int, Y: np.ndarray):
+    dependents = []
+    independents = []
+    A = combination_matrix(L)
+    for i in range(len(Y)):
+        if Y[i] == 0:
+            independents.append(i)
+            A[i, :] = 0
+        else:
+            dependents.append(i)
+    
+    vector = search_available(A[dependents], Y[dependents], independents)
+    
+
+    # BX = solve_full_rank(Y, L)
+    # solve_full_rank(A, L)[dependents][:, independents]
+
+    return vector
+    
 
 def test_bascket():
     batches = basket([0.5, 0.5, 0.5])
@@ -402,34 +471,12 @@ def test_matrix(l: int=3):
     print(MI)
 
 
-def test_disjoint_set():
-    pass
-
 
 def expand_matrix(l: int, freeindex: list):
     EX = np.zeros((1 << l, len(freeindex)), int)
     for i, n in enumerate(freeindex):
         EX[n, i] = 1 
     return EX
-
-
-def test_expand(batch: Batch):
-    l = batch.L
-    Y = batch.bisupports()
-
-    n = 1 << l
-    M = combination_matrix(l)
-    MI = combination_matrix_inv(l)
-    freenums = freeindex(Y)
-    Y[freenums] = 0.1
-
-    EX = expand_matrix(l, freenums)
-    print(np.concatenate([M, EX], axis=1))
-    print(MI.dot(EX))
-    df = pd.DataFrame(MI.dot(EX))
-    df["Y"] = Y
-
-    print(df)
 
 
 def limit_matrix(l: int, Y: np.ndarray, limit: float=0.1):
@@ -506,15 +553,6 @@ def test_basic_solution(batch: Batch):
 
     Y = batch.bisupports()
 
-    # frees = []
-    # solids = []
-    # for i, y in enumerate(Y):
-    #     if y > 0:
-    #         solids.append(i)
-    #     else:
-    #         frees.append(i)
-    # M = combination_matrix(batch.L)
-
     M, Y, solids, frees = limit_matrix(batch.L, Y, 0.2)
 
     R = basic_solution(batch.L, M[solids], Y[solids], frees, solids)
@@ -523,65 +561,17 @@ def test_basic_solution(batch: Batch):
     df["X"] = X
     df["Y"] = M[:, :1<<batch.L].dot(X)
     print(df)
-    
-
-def test_co_array(l: int=3):
-    size = 1 << l
-    A = np.zeros((size, size), int)
-    INVA = np.zeros((size, size), int)
-    for n in range(size):
-        # A[n][n] = 1
-        # fill_co_array(A[n], n, 0, l)
-        INVA[n][n] = 1
-        fill_co_inv_array(INVA[n], n, 0, l)
-
-    # print(A)
-    print(INVA)
 
 
-def test_basic():
+def test_no_full_rank(batch: Batch):
 
-    # Y = basket([0.5, 0.5, 0.5])
-    batch = Batch(
-        [0, 1, 2, 3],
-        [
-                # ([0, 1, 2], 0.1),
-            ([0, 1], 0.25),
-            ([1, 2], 0.25),
-            ([2, 3], 0.25),
-            # ([0, 3], 0.25),
-            ([0], 0.5),
-            ([1], 0.5),
-            ([2], 0.5),
-            ([3], 0.5),
-        ]
-    )
     Y = batch.bisupports()
-    A = combination_matrix(4)
-    vindex = []
-    yindex = []
-    for i, y in enumerate(Y):
-        if y == 0:
-            vindex.append(i)
-        else:
-            yindex.append(i)
-    # print(Y)
-    # print(vindex)
-    vertex = search_available(A[yindex], Y[yindex], yindex, vindex)
-    print(vertex)
-
-
-def test_comb():
-
-    # for items in scombinations([0, 1, 2], [4, 5, 6]):
-    for items in rcombinations(4, 2):
-        print(items)
+    X = float_random_solution(batch.L, Y)
+    print(X)
 
 
 
 def main():
-    # test_bascket()
-    # test_matrix()
 
     batch = Batch(
         [0, 1, 2, 3],
@@ -597,12 +587,9 @@ def main():
             ([3], 0.5),
         ]
     )
-    # test_expand(batch)
 
     # test_basic_solution(batch)
-    # test_co_array()
-    test_basic()
-    # test_comb()
+    test_no_full_rank(batch)
 
 
 if __name__ == "__main__":
