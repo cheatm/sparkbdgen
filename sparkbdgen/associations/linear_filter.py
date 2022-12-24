@@ -260,7 +260,6 @@ def basic_solution(l: int, A: np.ndarray, Y: np.ndarray, frees: list, solids: li
                 break
     
     require(freeX is not None, "No vertex found")
-    print(freeX)
     S = Sx.dot(freeX) + X
     R = np.zeros((m, ), float)
 
@@ -337,35 +336,38 @@ def align_index(xindex: list, independents: list):
     return l, xtarget, vtarget
 
 
-                
+def get_groups(A: np.ndarray):
+    N, M = A.shape
+    groups = []
+    n = 0
+    m = 0
+    group = []
+    while (n < N):
+        if A[n][m] == 1:
+            group.append(m)
+            n += 1
+            m += 1
+        else:
+            n -= 1
+            
 
 
 def search_available(A: np.ndarray, Y: np.ndarray, independents: list):
     n, m = A.shape
-    # lv = len(independents)
     rcount = len(independents)
-
-    matrix = pd.DataFrame(A)
-    matrix["Y"] = Y
-    print(matrix)
-
     searched = 0
     solutions = np.zeros((rcount, m))
-    searched_counts = np.zeros((rcount, ), int)
+    base_counts = np.zeros((rcount, ), int)
     scount = 0
     ed = set(independents)
     for items in rcombinations(m, n):
         searched += 1        
-        # lenght, xtargets, vtargets = align_index(items, independents)
-        # if lenght == 0:
-        #     continue
         B = A[:, items]
         if np.linalg.matrix_rank(B) != n:
             continue
         Xb = np.linalg.inv(B).dot(Y)
         if xavailable(Xb):
             solutions[scount, items] = Xb
-
             has_new = False
             for k in list(ed):
                 if solutions[scount, k] != 0 :
@@ -373,24 +375,21 @@ def search_available(A: np.ndarray, Y: np.ndarray, independents: list):
                     has_new = True
             
             if has_new:
-                searched_counts[scount] = searched
+                base_counts[scount] = searched
                 scount += 1
                 if len(ed) == 0:
                     break
                 if scount == len(solutions):
                     break
+            else:
+                solutions[scount, items] = 0
     
-    sdf = pd.DataFrame(solutions[:scount], searched_counts[:scount])
-    print(sdf[independents])
-
-    freeX = solutions[0, independents]
+    vdf = pd.DataFrame(solutions[:scount], index=base_counts[:scount])
+    print(vdf[independents])
     for i in range(1, scount):
-        # freeX = randomVector(freeX, solutions[i, independents])
         solutions[i, independents] = randomVector(solutions[i-1, independents], solutions[i, independents])
 
-    print(pd.DataFrame(solutions[:scount, independents], columns=independents))
-    freeX = solutions[scount-1, independents]
-    return freeX
+    return solutions[scount-1, independents]
 
 
 def basic_solution_matrix(L: int, dependents: list, indpendents: list):
@@ -446,15 +445,48 @@ def float_random_solution(L: int, Y: np.ndarray):
             A[i, :] = 0
         else:
             dependents.append(i)
-    
-    vector = search_available(A[dependents], Y[dependents], independents)
+    B = solve_full_rank(A, L)[dependents]
+    print(pd.DataFrame(B, dependents))
+    # vector = search_available(A[dependents], Y[dependents], independents)
+    BS = solve_full_rank(A, L)[dependents][:, independents]
+    BX = solve_full_rank(Y, L)[dependents]
+    # DX = ((-1) * BS).dot(vector) + BX
+    X = np.zeros((1<<L,), float)
+    # X[dependents] = DX
+    # X[independents] = vector
+    return X
+
+
+def test_rank():
+    L = 3
+    size = 1 << L
+    A = combination_matrix(L)
+    independent = [3,5,6,7]
+    dependent = [0, 1, 2, 3, 4, 5]
+    # A[independent, :] = 0
     
 
-    # BX = solve_full_rank(Y, L)
-    # solve_full_rank(A, L)[dependents][:, independents]
+    R = size
+    # A = solve_full_rank(A, 3)
+    # print(A)
+    A = expand_matrix(L, freeindex=independent)
+    print(A)
+    F = 0
+    N = 0
+    for items in combinations(range(size+len(independent)), size):
+        B = A[:, list(items)]
+        r = np.linalg.matrix_rank(B)
+        if r < R:
+            N += 1
+        else:
+            F += 1
+            print(B)
+            print(items, r)
+    print(A)
+    print(f"N={N}")
+    print(f"F={F}")
 
-    return vector
-    
+
 
 def test_bascket():
     batches = basket([0.5, 0.5, 0.5])
@@ -473,10 +505,11 @@ def test_matrix(l: int=3):
 
 
 def expand_matrix(l: int, freeindex: list):
+    A = combination_matrix(l)
     EX = np.zeros((1 << l, len(freeindex)), int)
     for i, n in enumerate(freeindex):
         EX[n, i] = 1 
-    return EX
+    return np.concatenate([A, EX], axis=1)
 
 
 def limit_matrix(l: int, Y: np.ndarray, limit: float=0.1):
@@ -494,7 +527,7 @@ def limit_matrix(l: int, Y: np.ndarray, limit: float=0.1):
 
     size = 1 << l
     M = combination_matrix(l)
-
+ 
     return np.concatenate([M, EX], axis=1), Y, list(range(size)), list(range(size, size+len(frees)))
     
 
@@ -563,12 +596,41 @@ def test_basic_solution(batch: Batch):
     print(df)
 
 
-def test_no_full_rank(batch: Batch):
+def sub_index(items: list, L: int):
+    size = 1 << L
+    others = []
+    for l in range(L):
+        if l not in items:
+            others.append(l)
+    root = sum([1 << i for i in items])
+    for o in range(len(others)+1):
+        for oindex in combinations(others, o):
+            yield root + sum([1 << i for i in oindex])    
 
-    Y = batch.bisupports()
-    X = float_random_solution(batch.L, Y)
-    print(X)
+def random_y(L: int, ns: int=2, chance: float=0.5):
 
+    size = 1 << L
+    X = np.random.rand(size)
+    X = X / sum(X)
+    Y = combination_matrix(L).dot(X)
+
+    for items in combinations(range(L), ns):
+        if np.random.rand() < chance:
+            for i in sub_index(items, L):
+                Y[i] = 0
+
+    return Y
+
+
+def test_no_full_rank(L: int, chance: float=0.5):
+
+    Y = random_y(L, chance=chance)
+    print(Y)
+    X = float_random_solution(L, Y)
+    # print(pd.DataFrame({
+    #     "X": X,
+    #     "Y": Y
+    # }))
 
 
 def main():
@@ -589,7 +651,8 @@ def main():
     )
 
     # test_basic_solution(batch)
-    test_no_full_rank(batch)
+    # test_no_full_rank(5, 0.3)
+    test_rank()
 
 
 if __name__ == "__main__":
