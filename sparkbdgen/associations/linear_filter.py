@@ -447,7 +447,7 @@ def float_random_solution(L: int, Y: np.ndarray):
             dependents.append(i)
     B = solve_full_rank(A, L)[dependents]
     print(pd.DataFrame(B, dependents))
-    # vector = search_available(A[dependents], Y[dependents], independents)
+    vector = search_available(A[dependents], Y[dependents], independents)
     BS = solve_full_rank(A, L)[dependents][:, independents]
     BX = solve_full_rank(Y, L)[dependents]
     # DX = ((-1) * BS).dot(vector) + BX
@@ -485,23 +485,6 @@ def test_rank():
     print(A)
     print(f"N={N}")
     print(f"F={F}")
-
-
-
-def test_bascket():
-    batches = basket([0.5, 0.5, 0.5])
-    print(batches)
-    midsolve(batches, 0, 3)
-    print(batches)
-    
-
-def test_matrix(l: int=3):
-
-    M = combination_matrix(l)
-    print(M)
-    MI = combination_matrix_inv(l)
-    print(MI)
-
 
 
 def expand_matrix(l: int, freeindex: list):
@@ -633,26 +616,164 @@ def test_no_full_rank(L: int, chance: float=0.5):
     # }))
 
 
+def distance(plane: np.ndarray, d: float, vector: np.ndarray):
+    return (d + plane.dot(vector)) / np.linalg.norm(plane)
+
+
+def pdot(p1: np.ndarray, p2: np.ndarray):
+    return (p1/np.linalg.norm(p1)).dot(p2/np.linalg.norm(p2))
+
+
+def test_distance(Y: np.ndarray, L: int):
+    dependents = []
+    independents = []
+
+    for i in range(len(Y)):
+        if Y[i] == 0:
+            independents.append(i)
+        else:
+            dependents.append(i)
+    
+    BS = -basic_solution_matrix(L, dependents, independents)
+    X = solveY(Y, L)
+    ds = X[dependents]
+    df = pd.DataFrame(BS)
+    df["d"] = ds
+    print(df)
+    distances = np.zeros(len(dependents), float)
+    vector = np.zeros(len(dependents), float)
+    for i in range(len(dependents)):
+        distances[i] = distance(BS[i], ds[i], vector)
+    
+    for i in range(1, len(dependents)):
+        factor = pdot(BS[0], BS[i])
+        tor = -distances[i]/factor
+        print(i, factor, tor)
+
+
+def fill_Y(L: int, Y: np.ndarray):
+    dependents = []
+    independents = []
+
+    for i in range(len(Y)):
+        if Y[i] == 0:
+            independents.append(i)
+        else:
+            dependents.append(i)
+    
+    V = combination_matrix_inv(L)
+
+    S = V[:, dependents].dot(Y[dependents])
+    midfill(V, S, L, independents)
+
+
+def midfill(V: np.ndarray, S: np.ndarray, L: int, index: list):
+    Ys = np.zeros((len(index),), float)
+    mid = 1 << (L - 1)
+    start = 0
+    for i in range(len(index)):
+        if index[i] >= mid:
+            if i > 0:
+                subindex = index[:i]
+                Ys[:i] = midfill(V[:mid, :mid], S[:mid]+S[mid:], L-1, subindex)
+                for j in range(i):
+                    S = S + V[:, index[j]] * Ys[j] 
+                start = i
+            break
+            
+    for i in reversed(range(start, len(index))):
+        y = index[i]
+        bottom = y
+        top = bottom - mid
+        left = 0
+        right = 1
+        
+        if V[bottom, y] == 1:
+            left = max(left, -S[bottom])
+            right = min(right, S[top])
+
+
+    return Ys
+
+
+def test_y_range(Y: np.ndarray, L: int):
+    dependents = []
+    independents = []
+
+    for i in range(len(Y)):
+        if Y[i] == 0:
+            independents.append(i)
+        else:
+            dependents.append(i)
+    
+    V = combination_matrix_inv(L)
+
+    S = V[:, dependents].dot(Y[dependents])
+
+    vdf = pd.DataFrame(V[:, independents], columns=independents)
+    vdf["S"] = S
+    print(vdf)
+    print(pd.Series(independents, independents).apply("{:04b}".format))
+    
+    # mid = 1<<(L-1)
+    # SL = S[:mid].copy()
+    # SL += S[mid:]
+
+    # left = list(filter(lambda i: i<mid, independents) )
+
+    # v1df = pd.DataFrame(V[:mid, left], columns=left).rename(
+    #     "{:04b}".format
+    # )
+    # v1df["S"] = SL
+
+    # print(v1df)
+
+
 def main():
 
     batch = Batch(
         [0, 1, 2, 3],
         [
                 # ([0, 1, 2], 0.1),
-            ([0, 1], 0.25),
-            ([1, 2], 0.25),
+            ([0, 1], 0.2),
+            ([1, 2], 0.3),
             ([2, 3], 0.25),
             # ([0, 3], 0.25),
             ([0], 0.5),
             ([1], 0.5),
             ([2], 0.5),
             ([3], 0.5),
+            # add
+            ([0, 2], 0.2),
+            ([0, 1, 2], 0.1),
+            ([0, 1, 2, 3], 0.05),
+            ([1, 2, 3], 0.1),
+            ([0, 2, 3], 0.125),
+            ([0, 1, 3], 0.1),
+            ([1, 3], 0.2),
+            ([0, 3], 0.3)
+
         ]
     )
 
+    # batch = Batch(
+    #     [0, 1, 2],
+    #     [
+    #         ([0], 0.5),
+    #         ([1], 0.5),
+    #         ([2], 0.5),
+    #         ([0, 1], 0.25),
+    #         ([0, 2], 0.25),
+    #     ]
+    # )
+
     # test_basic_solution(batch)
     # test_no_full_rank(5, 0.3)
-    test_rank()
+    # test_rank()
+    # test_distance(batch.bisupports(), batch.L)
+    # test_y_range(batch.bisupports(), batch.L)
+    # test_y_range(np.array([1, 0.5, 0, 0]), 2)
+    print(solveY(batch.bisupports(), batch.L))
 
 
 if __name__ == "__main__":
