@@ -5,6 +5,8 @@ from typing import Dict, List, Tuple, Iterable
 import numpy as np
 import pandas as pd
 
+pd.set_option("precision", 4)
+
 
 def basket(supports: list, limit: float=1e-4) -> np.ndarray:
     """generate independent supports
@@ -664,7 +666,12 @@ def fill_Y(L: int, Y: np.ndarray):
     V = combination_matrix_inv(L)
 
     S = V[:, dependents].dot(Y[dependents])
-    midfill(V, S, L, independents)
+    Ys = midfill(V, S, L, independents)
+
+    FY = Y.copy()
+    FY[independents] = Ys
+
+    return FY
 
 
 def midfill(V: np.ndarray, S: np.ndarray, L: int, index: list):
@@ -680,21 +687,100 @@ def midfill(V: np.ndarray, S: np.ndarray, L: int, index: list):
                     S = S + V[:, index[j]] * Ys[j] 
                 start = i
             break
-            
+    
+    print("start", start)
     for i in reversed(range(start, len(index))):
+        df = pd.DataFrame(V[:, index[start:i+1]], columns=index[start:i+1])
+        df["S"] = S
+        print(df)
         y = index[i]
+        # print(f"Y{y}")
         bottom = y
-        top = bottom - mid
         left = 0
         right = 1
-        
-        if V[bottom, y] == 1:
-            left = max(left, -S[bottom])
-            right = min(right, S[top])
-
+        up = index[i-1] if i > start else mid
+        while bottom > up:
+            print(f"V[{bottom}, {y}] = {V[bottom, y]}")
+            if V[bottom, y] == 1:
+                left = max(left, -S[bottom])
+                right = min(right, S[bottom - mid])
+            bottom -= 1
+        print(f"[{left}, {right}]")
+        Ys[i] = (right - left) * np.random.rand() + left
+        print(f"[{left}, {right}] -> {Ys[i]}")
+        S = S + V[:, y] * Ys[i]
 
     return Ys
 
+
+def test_fill(L: int, Y: np.ndarray):
+    FY = fill_Y(L, Y)
+    # print(FY)
+    # print(solve_full_rank(FY, L))
+    df = pd.DataFrame({
+        "Y": Y,
+        "FY": FY,
+        "X": solve_full_rank(FY, L)
+    })
+    print(df)
+
+
+def solve_leq(V: np.ndarray, S: np.ndarray, randfunc):
+    M, N = V.shape
+    Y = np.zeros((N,))
+    n = N - 1
+    m = M - 1
+    mid = int(M / 2)
+    
+    while n > 0:
+        left = 0
+        right = 1
+        while V[m, n-1] == 0:
+            if V[m, n] == 1:
+                left = max(left, -S[m])
+                right = min(right, S[m-mid])
+            else:
+                right = min(right, S[m])
+                left = max(left, -S[m-mid])
+            m -= 1
+        Y[n] = randfunc(left, right)
+        S += V[:, n] * Y[n]
+        df = pd.DataFrame(V[:, :n+1])
+        df["S"] = S
+        print(df)
+        n -= 1   
+
+    left = 0
+    right = 1
+    if V[m, n] == 1:
+        left = max(left, -S[m])
+        right = min(right, S[m-mid])
+    else:
+        right = min(right, S[m])
+        left = max(left, -S[m-mid])
+    m -= 1
+    Y[n] = randfunc(left, right)
+    S += V[:, n] * Y[n]
+    print(S)
+
+    return Y
+
+
+def get_range(F: np.ndarray, S: np.ndarray):
+    
+    l = 0
+    r = 1
+
+    for i in range(len(F)):
+        if F[i] == 1:
+            l = max(l, -S[i])
+            # print(f"{i}: l = {l}")
+        elif F[i] == -1:
+            r = min(r, S[i])
+            # print(f"{i}: r = {r}")
+        
+    return l, r
+        
 
 def test_y_range(Y: np.ndarray, L: int):
     dependents = []
@@ -710,23 +796,30 @@ def test_y_range(Y: np.ndarray, L: int):
 
     S = V[:, dependents].dot(Y[dependents])
 
-    vdf = pd.DataFrame(V[:, independents], columns=independents)
-    vdf["S"] = S
-    print(vdf)
-    print(pd.Series(independents, independents).apply("{:04b}".format))
+    df = pd.DataFrame(V[:, independents], columns=independents)
+    df["S"] = S
+    print(df.round(4))
+
+    for i in range(0, 16, 4):
+        S[i:i+2] += S[i+2:i+4]
+    # for i in range(0, 16, 2):
+    #     S[i:i+1] += S[i+2:i+4]
+
+    # l, r = get_range(V[:, 10], S)
+    df = pd.DataFrame(V[:, [13]], columns=[13])
+    df["S"] = S
+    print(df.round(4))
+    # # print(l, r)
+
+    # for i in [0, 2, 8, 10]:
+    #     S[i:i+1] += S[i+1:i+2]
     
-    # mid = 1<<(L-1)
-    # SL = S[:mid].copy()
-    # SL += S[mid:]
+    # df = pd.DataFrame(V[:, [10]], columns=[10])
+    # df["S"] = S
+    # print(df.round(4))
 
-    # left = list(filter(lambda i: i<mid, independents) )
-
-    # v1df = pd.DataFrame(V[:mid, left], columns=left).rename(
-    #     "{:04b}".format
-    # )
-    # v1df["S"] = SL
-
-    # print(v1df)
+    l, r = get_range(V[:, 13], S)
+    print(l, r)
 
 
 def main():
@@ -746,13 +839,12 @@ def main():
             # add
             ([0, 2], 0.2),
             ([0, 1, 2], 0.1),
-            ([0, 1, 2, 3], 0.05),
-            ([1, 2, 3], 0.1),
-            ([0, 2, 3], 0.125),
-            ([0, 1, 3], 0.1),
-            ([1, 3], 0.2),
-            ([0, 3], 0.3)
-
+            ([0, 3], 0.3),
+            ([1, 3], 0.4),
+            ([0, 1, 3], 0.2),
+            # ([0, 2, 3], 0.2),
+            # ([0, 1, 2, 3], 0.1),
+            # ([1, 2, 3], 0.25),
         ]
     )
 
@@ -771,9 +863,9 @@ def main():
     # test_no_full_rank(5, 0.3)
     # test_rank()
     # test_distance(batch.bisupports(), batch.L)
-    # test_y_range(batch.bisupports(), batch.L)
+    test_y_range(batch.bisupports(), batch.L)
     # test_y_range(np.array([1, 0.5, 0, 0]), 2)
-    print(solveY(batch.bisupports(), batch.L))
+    # test_fill(batch.L, batch.bisupports())
 
 
 if __name__ == "__main__":
