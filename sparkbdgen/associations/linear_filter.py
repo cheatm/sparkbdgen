@@ -786,6 +786,7 @@ def test_y_range(Y: np.ndarray, L: int):
     dependents = []
     independents = []
 
+
     for i in range(len(Y)):
         if Y[i] == 0:
             independents.append(i)
@@ -800,13 +801,21 @@ def test_y_range(Y: np.ndarray, L: int):
     df["S"] = S
     print(df.round(4))
 
+    # for i in range(0, 16, 4):
+    #     S[i:i+1] += S[i+1:i+2]
+    #     V[i:i+1] += V[i+1:i+2]
+    #     S[i+2:i+3] += S[i+3:i+4]
+    #     V[i+2:i+3] += V[i+3:i+4]
     for i in range(0, 16, 4):
-        S[i:i+2] += S[i+2:i+4]
+        S[i:i+1] += S[i+2:i+3]
+        V[i:i+1] += V[i+2:i+3]
+        S[i+1:i+2] += S[i+3:i+4]
+        V[i+1:i+2] += V[i+3:i+4]
     # for i in range(0, 16, 2):
     #     S[i:i+1] += S[i+2:i+4]
 
     # l, r = get_range(V[:, 10], S)
-    df = pd.DataFrame(V[:, [13]], columns=[13])
+    df = pd.DataFrame(V[:, independents], columns=independents)
     df["S"] = S
     print(df.round(4))
     # # print(l, r)
@@ -820,6 +829,7 @@ def test_y_range(Y: np.ndarray, L: int):
 
     l, r = get_range(V[:, 13], S)
     print(l, r)
+    
 
 
 def main():
@@ -842,7 +852,7 @@ def main():
             ([0, 3], 0.3),
             ([1, 3], 0.4),
             ([0, 1, 3], 0.2),
-            # ([0, 2, 3], 0.2),
+            # ([0, 2, 3], 0.1),
             # ([0, 1, 2, 3], 0.1),
             # ([1, 2, 3], 0.25),
         ]
