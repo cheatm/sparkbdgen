@@ -653,118 +653,6 @@ def test_distance(Y: np.ndarray, L: int):
         print(i, factor, tor)
 
 
-def fill_Y(L: int, Y: np.ndarray):
-    dependents = []
-    independents = []
-
-    for i in range(len(Y)):
-        if Y[i] == 0:
-            independents.append(i)
-        else:
-            dependents.append(i)
-    
-    V = combination_matrix_inv(L)
-
-    S = V[:, dependents].dot(Y[dependents])
-    Ys = midfill(V, S, L, independents)
-
-    FY = Y.copy()
-    FY[independents] = Ys
-
-    return FY
-
-
-def midfill(V: np.ndarray, S: np.ndarray, L: int, index: list):
-    Ys = np.zeros((len(index),), float)
-    mid = 1 << (L - 1)
-    start = 0
-    for i in range(len(index)):
-        if index[i] >= mid:
-            if i > 0:
-                subindex = index[:i]
-                Ys[:i] = midfill(V[:mid, :mid], S[:mid]+S[mid:], L-1, subindex)
-                for j in range(i):
-                    S = S + V[:, index[j]] * Ys[j] 
-                start = i
-            break
-    
-    print("start", start)
-    for i in reversed(range(start, len(index))):
-        df = pd.DataFrame(V[:, index[start:i+1]], columns=index[start:i+1])
-        df["S"] = S
-        print(df)
-        y = index[i]
-        # print(f"Y{y}")
-        bottom = y
-        left = 0
-        right = 1
-        up = index[i-1] if i > start else mid
-        while bottom > up:
-            print(f"V[{bottom}, {y}] = {V[bottom, y]}")
-            if V[bottom, y] == 1:
-                left = max(left, -S[bottom])
-                right = min(right, S[bottom - mid])
-            bottom -= 1
-        print(f"[{left}, {right}]")
-        Ys[i] = (right - left) * np.random.rand() + left
-        print(f"[{left}, {right}] -> {Ys[i]}")
-        S = S + V[:, y] * Ys[i]
-
-    return Ys
-
-
-def test_fill(L: int, Y: np.ndarray):
-    FY = fill_Y(L, Y)
-    # print(FY)
-    # print(solve_full_rank(FY, L))
-    df = pd.DataFrame({
-        "Y": Y,
-        "FY": FY,
-        "X": solve_full_rank(FY, L)
-    })
-    print(df)
-
-
-def solve_leq(V: np.ndarray, S: np.ndarray, randfunc):
-    M, N = V.shape
-    Y = np.zeros((N,))
-    n = N - 1
-    m = M - 1
-    mid = int(M / 2)
-    
-    while n > 0:
-        left = 0
-        right = 1
-        while V[m, n-1] == 0:
-            if V[m, n] == 1:
-                left = max(left, -S[m])
-                right = min(right, S[m-mid])
-            else:
-                right = min(right, S[m])
-                left = max(left, -S[m-mid])
-            m -= 1
-        Y[n] = randfunc(left, right)
-        S += V[:, n] * Y[n]
-        df = pd.DataFrame(V[:, :n+1])
-        df["S"] = S
-        print(df)
-        n -= 1   
-
-    left = 0
-    right = 1
-    if V[m, n] == 1:
-        left = max(left, -S[m])
-        right = min(right, S[m-mid])
-    else:
-        right = min(right, S[m])
-        left = max(left, -S[m-mid])
-    m -= 1
-    Y[n] = randfunc(left, right)
-    S += V[:, n] * Y[n]
-    print(S)
-
-    return Y
-
 
 def get_range(F: np.ndarray, S: np.ndarray):
     
@@ -780,56 +668,407 @@ def get_range(F: np.ndarray, S: np.ndarray):
             # print(f"{i}: r = {r}")
         
     return l, r
-        
 
-def test_y_range(Y: np.ndarray, L: int):
+
+
+def uniform(l: float, r: float):
+    return np.random.rand() * (r - l) + l
+
+
+def y_rand_r(L: int, independents: list, Y: np.ndarray, M: np.ndarray, X:np.ndarray, rfunc=uniform):
+    """_summary_
+
+    
+
+    :param L: _description_
+    :type L: int
+    :param independents: _description_
+    :type independents: list
+    :param Y: _description_
+    :type Y: np.ndarray
+    :param M: _description_
+    :type M: np.ndarray
+    :param X: _description_
+    :type X: np.ndarray
+    :param rfunc: _description_, defaults to uniform
+    :type rfunc: _type_, optional
+    :raises ValueError: _description_
+    :return: _description_
+    :rtype: _type_
+    """
+    head = f"y_rand_r({L}, {independents}, {Y}, {M}, {X})"
+    print(head)
+    if L < 1:
+        raise ValueError("Require: L >= 1")
+    
+    if not len(independents):
+        print(head, Y)
+        return Y
+
+    if L == 1:
+        R = np.zeros((2,), float)
+        if len(independents) == 2:
+            R[0] = rfunc(M[0] + M[1], X[0] + X[1])
+        else:
+            R[0] = Y[0]
+        left = max(M[1], R[0]-X[0])
+        right = min(X[1], R[0]-M[0])
+        try:
+            R[1] = rfunc(left, right)
+        except:
+            print(head)
+            raise
+        print(head, R)
+        return R
+    
+    size = 1 << L
+    mid = 1 << (L-1)
+
+    i = 0
+    while i < len(independents) and independents[i] < mid:
+        i += 1
+
+    Y_l = y_rand_r(L-1, independents[:i], Y[:mid], M[:mid]+M[mid:], X[:mid]+X[mid:], rfunc)
+    V = combination_matrix_inv(L-1)
+    d_y = V.dot(Y_l)
+    X_l = d_y - X[:mid]
+    print(f"Y_l: {Y_l}")
+    print(f"X_l: {X_l}")
+    print(f"M_l: {M[:mid]}")
+    for _i in range(mid):
+        X_l[_i] = max(X_l[_i], M[_i])
+    print(f"X_l: {X_l}")
+
+    X_r = d_y - M[:mid]
+    print(f"X_r: {X_r}")
+    print(f"X  : {X[mid:]}")
+    for _i in range(mid):
+        X_r[_i] = min(X_r[_i], X[mid+_i])
+    
+    print(f"X_r: {X_r}")
+
+    
+    Y_r = y_rand_r(L-1, [y-mid for y in independents[i:]], Y[mid:], X_l, X_r, rfunc)
+
+    R = np.zeros((size,), float)
+    R[:mid] = Y_l
+    R[mid:] = Y_r
+
+    print(head, R)
+
+    return R
+
+def y_rand(L: int, independents: list, Y: np.ndarray, rfunc=uniform):
+    head = f"y_rand({L}, {independents}, {Y})"
+    print(head)
+    if L < 1:
+        raise ValueError("Require: L >= 1")
+
+    if not len(independents):
+        print(head, Y)
+        return Y
+    if L == 1:
+        result = np.zeros((2,), float)
+        result[0] = Y[0]
+        result[1] = rfunc(0, Y[0])
+        print(head, result)
+        return result
+    
+    size = 1 << L
+    mid = 1 << (L-1)
+    
+    i = 0
+    while i < len(independents) and independents[i] < mid:
+        i += 1
+
+    Y_l = y_rand(L-1, independents[:i], Y[:mid], rfunc)
+
+    V = combination_matrix_inv(L-1)
+    X_l = V.dot(Y_l)
+    
+    Y_r  = y_rand_r(L-1, [y-mid for y in independents[i:]], Y[mid:], np.zeros((mid,), float), X_l, rfunc)
+    result = np.zeros((size,), float)
+    result[:mid] = Y_l
+    result[mid:] = Y_r
+
+    print(head, result)
+
+    return result
+
+
+def lower(l, r):
+    if l > r:
+        raise ValueError(f"{l} > {r}")
+    
+    print("lower", l, r)
+    return l
+
+
+def upper(l, r):
+    if l > r:
+        raise ValueError(f"{l} > {r}")
+    return r
+
+
+def medium(l, r):
+    if l > r:
+        raise ValueError(f"{l} > {r}")
+
+    return (l+r) / 2
+
+
+def yrange(V: np.ndarray, B: np.ndarray, T: np.ndarray, rfunc=uniform):
+    l = 0
+    r = 1
+
+    for i in range(len(V)):
+        if V[i] > 0:
+            l = max(l, B[i])
+            r = min(r, T[i])
+        elif V[i] < 0:
+            l = max(l, -T[i])
+            r = min(r, -B[i])
+    
+    return rfunc(l, r)
+
+
+def vmax(v1: np.ndarray, v2: np.ndarray, size: int):
+    v = np.zeros((size,), float)
+    for s in range(size):
+        v[s] = max(v1[s], v2[s])
+    return v
+
+
+def vmin(v1: np.ndarray, v2: np.ndarray, size: int):
+    v = np.zeros((size,), float)
+    for s in range(size):
+        v[s] = min(v1[s], v2[s])
+    return v
+
+
+def randy(L: int, independents: list, A: np.ndarray, B: np.ndarray, T: np.ndarray, rfunc=uniform):
+    if L == 0:
+        print(A, B, T)
+        return np.array([yrange(A[0], B, T, rfunc)])
+    
+    rdf = pd.DataFrame(A, columns=independents)
+    rdf["B"] = B
+    rdf["T"] = T
+    print(rdf)
+
+    mid = 1 << (L-1)
+
+    w = 0
+    while independents[w] < mid:
+        w += 1
+
+    Y = np.zeros((len(independents),), float)
+    if w:
+        W = A[:mid, :w]
+        wy = randy(L-1, independents[:w], W, B[mid:]+B[:mid], T[mid:]+T[:mid], rfunc)
+        wx = A[:, :w].dot(wy)
+        B = B - wx
+        T = T - wx
+        Y[:w] = wy
+
+    vy = randy(
+        L-1, [pos - mid for pos in independents[w:]], A[mid:, w:], 
+        vmax(B[mid:], -T[:mid], mid),
+        vmin(T[mid:], -B[:mid], mid),
+        rfunc
+    )
+
+    Y[w:] = vy
+
+    return Y
+
+
+
+def array_match(a1: np.ndarray, a2: np.ndarray, s: int):
+    for i in range(s):
+        if a1[i] != a2[i]:
+            return False
+    
+    return True
+
+
+def find_group(V: np.ndarray, pos: int):
+    n, m = V.shape
+
+    groups = []
+    tag = set()
+
+    for i in range(pos+1):
+        if V[i, 0] == 0:
+            continue
+
+        if i in tag:
+            continue
+        group = [i]
+        groups.append(group)
+        tag.add(i)
+        
+        for j in range(i+1, pos+1):
+            if array_match(V[i, :], V[j, :], m):
+                group.append(j)
+                tag.add(j)
+
+    return groups
+
+
+def zero_index(a: np.ndarray, pos: int):
+    n = len(a)
+
+    index = []
+    for i in range(pos):
+        if a[i] == 0:
+            index.append(i)
+    
+    for i in range(pos+1, n):
+        index.append(i)
+
+    return index
+
+
+def find_opposite(V: np.ndarray, index: list, array: np.ndarray):
+    _, m = V.shape
+    oa = -array
+    results = []
+    for i in index:
+        if array_match(V[i, :], oa, m):
+            results.append(i)
+    return results
+
+
+def float_y_range(L: int, V: np.ndarray, X: np.ndarray, independents: list, rfunc=uniform):
+
+    # rdf = pd.DataFrame(V, columns=independents)
+    # rdf["X"] = X
+
+    # print(rdf)
+
+    Y = np.zeros((len(independents,)), float)
+    for i, pos in enumerate(independents):
+        rdf = pd.DataFrame(V[:, i:], columns=independents[i:])
+        rdf["X"] = X
+
+        print(rdf)
+        groups = find_group(V[:, i:], pos)
+        index = zero_index(V[:, i], pos)
+        print(pos, groups)
+        l = 0
+        r = 1
+        print("zeros", index)
+        for group in groups:
+            p = group[0]
+
+            opposite = find_opposite(V[:, i+1:], index, V[p, i+1:])
+            if V[p, i] > 0:
+                if len(opposite):
+                    l = max(- (min(X[group]) + min(X[opposite])), l)
+                else:
+                    l = max(- min(X[group]), l)
+            else:
+                if len(opposite):
+                    r = min(min(X[group]) + min(X[opposite]), r)
+                else:
+                    r = min(min(X[group]), r)
+            
+            print(group, opposite)
+        
+        print(f"range = [{l}, {r}]")
+
+        y = rfunc(l, r)
+        X = X + V[:, i] * y
+        Y[i] = y
+
+    return Y
+
+
+def float_y(L: int, Y: np.ndarray, rfunc=uniform):
     dependents = []
     independents = []
-
-
     for i in range(len(Y)):
         if Y[i] == 0:
             independents.append(i)
         else:
             dependents.append(i)
-    
+
     V = combination_matrix_inv(L)
+    X = V[:, dependents].dot(Y[dependents])
 
-    S = V[:, dependents].dot(Y[dependents])
+    vy = float_y_range(L, V[:, independents], X, independents, rfunc)
 
-    df = pd.DataFrame(V[:, independents], columns=independents)
-    df["S"] = S
-    print(df.round(4))
+    R = np.zeros((len(Y), ), float)
+    R[dependents] = Y[dependents]
+    R[independents] = vy
+    return R
 
-    # for i in range(0, 16, 4):
-    #     S[i:i+1] += S[i+1:i+2]
-    #     V[i:i+1] += V[i+1:i+2]
-    #     S[i+2:i+3] += S[i+3:i+4]
-    #     V[i+2:i+3] += V[i+3:i+4]
-    for i in range(0, 16, 4):
-        S[i:i+1] += S[i+2:i+3]
-        V[i:i+1] += V[i+2:i+3]
-        S[i+1:i+2] += S[i+3:i+4]
-        V[i+1:i+2] += V[i+3:i+4]
-    # for i in range(0, 16, 2):
-    #     S[i:i+1] += S[i+2:i+4]
 
-    # l, r = get_range(V[:, 10], S)
-    df = pd.DataFrame(V[:, independents], columns=independents)
-    df["S"] = S
-    print(df.round(4))
-    # # print(l, r)
+def test_float_y(L: int, Y: np.ndarray, rfunc=uniform):
+    R = float_y(L, Y, rfunc)
+    X = solve_full_rank(R, L)
+    rdf = pd.DataFrame({
+        "Y": Y,
+        "R": R,
+        "X": X
+    })
+    print(rdf)
 
-    # for i in [0, 2, 8, 10]:
-    #     S[i:i+1] += S[i+1:i+2]
-    
-    # df = pd.DataFrame(V[:, [10]], columns=[10])
-    # df["S"] = S
-    # print(df.round(4))
 
-    l, r = get_range(V[:, 13], S)
-    print(l, r)
-    
+def test_y_rand(Y: np.ndarray, L: int, independents: list=None):
+    if not independents:
+        independents = []
+        for i in range(len(Y)):
+            if Y[i] == 0:
+                independents.append(i)
+
+    R = y_rand(
+        L, independents, Y, 
+        # lambda l, r: (l+r)/2
+        lower
+        # upper
+    )
+    X = solve_full_rank(R, L)
+    rdf = pd.DataFrame({
+        "Y": Y,
+        "R": R,
+        "X": X
+    })
+    print(rdf)
+
+    for i, x in enumerate(X):
+        if x < 0:
+            raise ValueError(f"X{i} = {x} < 0")
+
+
+def test_y_range(Y: np.ndarray, L: int, independents: list=None):
+    dependents = []
+    if not independents:
+        independents = []
+
+
+        for i in range(len(Y)):
+            if Y[i] == 0:
+                independents.append(i)
+            else:
+                dependents.append(i)
+    else:
+        j = 0
+        i = 0
+        while i < len(Y) and j < len(independents):
+            if i < independents[j]:
+                dependents.append(i)
+                i += 1
+            else:
+                i += 1
+                j += 1
+        
+        while i < len(Y):
+            dependents.append(i)
+            i += 1
+
+        print(dependents)
 
 
 def main():
@@ -847,12 +1086,12 @@ def main():
             ([2], 0.5),
             ([3], 0.5),
             # add
-            ([0, 2], 0.2),
-            ([0, 1, 2], 0.1),
-            ([0, 3], 0.3),
-            ([1, 3], 0.4),
-            ([0, 1, 3], 0.2),
-            # ([0, 2, 3], 0.1),
+            # ([0, 2], 0.2),
+            # ([0, 1, 2], 0.1),
+            # ([0, 3], 0.3),
+            # ([1, 3], 0.4),
+            # ([0, 1, 3], 0.2),
+            # ([0, 2, 3], 0.2),
             # ([0, 1, 2, 3], 0.1),
             # ([1, 2, 3], 0.25),
         ]
@@ -873,9 +1112,32 @@ def main():
     # test_no_full_rank(5, 0.3)
     # test_rank()
     # test_distance(batch.bisupports(), batch.L)
-    test_y_range(batch.bisupports(), batch.L)
+    # Y = batch.bisupports()
+    # test_y_range(Y, batch.L)
+    # print(solveY(Y, batch.L))
     # test_y_range(np.array([1, 0.5, 0, 0]), 2)
     # test_fill(batch.L, batch.bisupports())
+    
+    L = 4
+    # Y = random_y(L)
+    # Y = np.array([1.0, 0.64, 0.53, 0.0, 0.54, 0.36, 0.3, 0.0])
+    # Y = np.array([1.0, 0.64, 0.53, 0.53, 0, 0.39, 0.39, 0.0])
+    Y = np.array(
+        [1.0, 0.4783623722876001, 0.42135025029614215, 0.0, 0.5590830726336207, 0.27860867671873163, 0.2893586315531935, 0.0, 0.5536892042543795, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    )
+    print(list(Y))
+    # test_y_rand(Y, L)
+
+    # L = 2
+    # Y = np.array([1, 0.6, 0, 0])
+
+
+    test_float_y(
+        L, Y, 
+        medium,
+        # lower,
+        # upper,
+    )
 
 
 if __name__ == "__main__":
