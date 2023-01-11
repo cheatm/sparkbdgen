@@ -940,6 +940,64 @@ def find_opposite(V: np.ndarray, index: list, array: np.ndarray):
     return results
 
 
+def get_y_range(L: int, V: np.ndarray, X: np.ndarray, index: list):
+    require(len(index) > 0, "index size should > 0")
+    if len(index) == 1:
+        l = 0
+        r = 1
+        for i in range(index[0]+1):
+            if V[i, 0] > 0:
+                l = max(l, -X[0])
+            elif V[i, 0] < 0:
+                r = min(r, X[0])
+        return l, r
+    
+    rdf = pd.DataFrame(V, columns=index)
+    rdf["X"] = X
+    print(rdf)
+
+    pos = index[0]
+    groups = find_group(V, pos)
+    zeros = zero_index(V[:, 0], pos)
+    print(pos, groups)
+    print("zeros", zeros)
+
+    l = 0 
+    r = 1
+    for group in groups:
+        p = group[0]
+        opposite = find_opposite(V[:, 1:], zeros, V[p, 1:])
+        if not len(opposite):
+            i = 0
+            # mid = 1 << (L-1)
+            size = 1 << L
+            m = 1
+            while m < L:
+                groupsize = 1 << (L - m)
+                mid = size - groupsize
+                if index[0] < mid:
+                    i = 0
+
+                    while index[i] < mid:
+                        i += 1
+                    print(mid, i)
+                    nx = X.copy()
+                    for _m in range(m):
+                        nx[_m:_m+groupsize] += nx[_m+groupsize:_m+groupsize+groupsize]
+                    return get_y_range(L, V[:mid, :i], nx[:mid], index[:i])
+                m += 1 
+
+            
+        if V[p, 0] > 0:
+            l = max(- (min(X[group]) + min(X[opposite])), l)
+            print(f"l = {l}", group, opposite)
+        else:
+            r = min(min(X[group]) + min(X[opposite]), r)
+            print(f"r = {r}", group, opposite)
+
+    return l, r
+
+
 def float_y_range(L: int, V: np.ndarray, X: np.ndarray, independents: list, rfunc=uniform):
 
     # rdf = pd.DataFrame(V, columns=independents)
@@ -949,38 +1007,61 @@ def float_y_range(L: int, V: np.ndarray, X: np.ndarray, independents: list, rfun
 
     Y = np.zeros((len(independents,)), float)
     for i, pos in enumerate(independents):
-        rdf = pd.DataFrame(V[:, i:], columns=independents[i:])
-        rdf["X"] = X
+        # rdf = pd.DataFrame(V[:, i:], columns=independents[i:])
+        # rdf["X"] = X
 
-        print(rdf)
-        groups = find_group(V[:, i:], pos)
-        index = zero_index(V[:, i], pos)
-        print(pos, groups)
-        l = 0
-        r = 1
-        print("zeros", index)
-        for group in groups:
-            p = group[0]
+        # print(rdf)
+        # groups = find_group(V[:, i:], pos)
+        # index = zero_index(V[:, i], pos)
+        # print(pos, groups)
+        # l = 0
+        # r = 1
+        # print("zeros", index)
+        # for group in groups:
+        #     p = group[0]
 
-            opposite = find_opposite(V[:, i+1:], index, V[p, i+1:])
-            if V[p, i] > 0:
-                if len(opposite):
-                    l = max(- (min(X[group]) + min(X[opposite])), l)
-                else:
-                    l = max(- min(X[group]), l)
-            else:
-                if len(opposite):
-                    r = min(min(X[group]) + min(X[opposite]), r)
-                else:
-                    r = min(min(X[group]), r)
+        #     opposite = find_opposite(V[:, i+1:], index, V[p, i+1:])
+        #     if V[p, i] > 0:
+        #         if len(opposite):
+        #             l = max(- (min(X[group]) + min(X[opposite])), l)
+        #         else:
+        #             l = max(- min(X[group]), l)
+        #     else:
+        #         if len(opposite):
+        #             r = min(min(X[group]) + min(X[opposite]), r)
+        #         else:
+        #             r = min(min(X[group]), r)
             
-            print(group, opposite)
-        
+        #     print(group, opposite)
+        l, r = get_y_range(L, V[:, i:], X, independents[i:])
+
         print(f"range = [{l}, {r}]")
 
         y = rfunc(l, r)
         X = X + V[:, i] * y
         Y[i] = y
+
+    return Y
+
+
+def show_df(V: np.ndarray, X: np.ndarray, index: list):
+
+    df = pd.DataFrame(V, columns=index)
+    df["X"] = X
+    print(df)
+
+
+def step_y(L: int, V: np.ndarray, X: np.ndarray, index: list, rfunc=uniform):
+
+    show_df(V, X, index)
+    Y = np.zeros((len(index), ), float)
+
+    mid = 1 << (L-1)
+    Y[0] = get_range(V[:, 0], X[:mid]+X[mid:])
+    X = X + V[:, 0] * Y[0]
+
+    show_df(V, X, index) 
+
 
     return Y
 
@@ -997,7 +1078,8 @@ def float_y(L: int, Y: np.ndarray, rfunc=uniform):
     V = combination_matrix_inv(L)
     X = V[:, dependents].dot(Y[dependents])
 
-    vy = float_y_range(L, V[:, independents], X, independents, rfunc)
+    # vy = float_y_range(L, V[:, independents], X, independents, rfunc)
+    vy = step_y(L, V[:, independents], X, independents, rfunc)
 
     R = np.zeros((len(Y), ), float)
     R[dependents] = Y[dependents]
@@ -1042,7 +1124,109 @@ def test_y_rand(Y: np.ndarray, L: int, independents: list=None):
             raise ValueError(f"X{i} = {x} < 0")
 
 
-def test_y_range(Y: np.ndarray, L: int, independents: list=None):
+def reduce_half(A: np.ndarray, T: np.ndarray, LV: np.ndarray, L: int, begin: int):
+    if L <= 0:
+        return
+    mid = 1 << (L-1)
+    adf = pd.DataFrame(A[begin:begin+(1<<L)], list(range(begin, begin+(1<<L))))
+    # adf["T"] = T[begin:begin+(1<<L)]
+    # adf["LV"] = LV[begin:begin+(1<<L)]
+    # print(adf)
+    for i in range(begin, begin+mid):
+        if T[i] and (LV[i] == LV[i+mid]):
+            A[i, :] -= A[i+mid, :]
+            # T[i] -= T[i+mid]
+            LV[i] -= mid * T[i+mid]
+    
+
+    reduce_half(A, T, LV, L-1, begin)
+    reduce_half(A, T, LV, L-1, begin+mid)
+
+
+def reduce_matrix(index: list, L: int):
+    size = 1 << L
+    isy = np.zeros((size,), int)
+
+    A = np.identity(size, int)
+    # A = combination_matrix(L)
+    for i in index:
+        isy[i] = 1
+
+    LV = np.zeros((size, ), int)
+    reduce_half(A, isy, LV, L, 0)
+
+    return A
+
+
+def sub_tag(A: np.ndarray):
+    m, n = A.shape
+    T = np.zeros((m, ), int)
+    T[0] = 1
+    for i in range(1, m):
+        for j in range(1, n):
+            if not A[i, j] <= A[0, j]:
+                T[i] = j
+                break
+
+    return T
+
+
+def is_sub(P: np.ndarray, S: np.ndarray, r: int):
+    while r >= 0:
+        if not (S[r] <= P[r]):
+            return False
+        r -= 1
+
+    return True
+
+
+def ex_combinations(L: int, independents: list):
+    EX = expand_matrix(L, independents)
+    EY = solveY(EX, L)
+    size = 1 << L
+
+    for esize in reversed(range(len(independents)+1)):
+        
+        for index in combinations(range(len(independents)), esize):
+            max_i = independents[index[-1]]
+            msize = size - max_i - 1
+            asize = size - msize - esize
+            targets = np.zeros((size,), int)
+
+
+            count = 0
+            frank = 0
+            for acomb in combinations(range(size-msize), asize):
+                i = 0
+                for a in acomb:
+                    targets[i] = a
+                    i += 1
+                for a in range(max_i+1, size):
+                    targets[i] = a
+                    i += 1
+                for a in index:
+                    targets[i] = a + size
+                    i += 1
+                
+                A = EY[:, targets]
+                if np.linalg.matrix_rank(A) == size:
+                    frank += 1
+                else:
+                    
+                    print([independents[ix] for ix in index])
+                    print(targets)
+                    print(A)
+                    print(EX[:, targets])
+                    break
+                count += 1
+        
+            yield index, f"C({size-msize}, {asize}) = {count}, fullrank = {frank}"
+
+        if esize < len(independents):
+            break
+
+
+def test_y_range(Y: np.ndarray, L: int, independents: list=None, rfunc=uniform):
     dependents = []
     if not independents:
         independents = []
@@ -1069,6 +1253,40 @@ def test_y_range(Y: np.ndarray, L: int, independents: list=None):
             i += 1
 
         print(dependents)
+
+    A = combination_matrix(L)
+    EX = expand_matrix(L, independents)
+    EY = Y.copy()
+    for i in range(len(Y)):
+        if EY[i] == 0:
+            EY[i] = 10000
+    
+    df = pd.DataFrame(EX)
+    df["Y"] = EY
+    print(df)
+
+    comb = [0, 1, 2, 7, 8, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24]
+    print(df[comb])
+
+    EX = solveY(EX, L)
+    EY = solveY(EY, L)
+
+    df = pd.DataFrame(EX)
+    df["Y"] = EY
+    print(df[comb])
+
+
+    # for index in ex_combinations(L, independents):
+    #     print(index)
+
+    # R = A.dot(X).astype(int)
+    # rdf = pd.DataFrame({
+    #     "Y": Y,
+    #     "R": R,
+    #     "X": X
+    # })
+
+    # print(rdf)
 
 
 def main():
@@ -1119,25 +1337,33 @@ def main():
     # test_fill(batch.L, batch.bisupports())
     
     L = 4
-    # Y = random_y(L)
-    # Y = np.array([1.0, 0.64, 0.53, 0.0, 0.54, 0.36, 0.3, 0.0])
-    # Y = np.array([1.0, 0.64, 0.53, 0.53, 0, 0.39, 0.39, 0.0])
+    # # Y = random_y(L)
+    # # Y = np.array([1.0, 0.64, 0.53, 0.0, 0.54, 0.36, 0.3, 0.0])
+    # # Y = np.array([1.0, 0.64, 0.53, 0.53, 0, 0.39, 0.39, 0.0])
     Y = np.array(
-        [1.0, 0.4783623722876001, 0.42135025029614215, 0.0, 0.5590830726336207, 0.27860867671873163, 0.2893586315531935, 0.0, 0.5536892042543795, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        [1.0, 0.4783623722876001, 0.42135025029614215, 0.0, 0.5590830726336207, 0.27860867671873163, 0.2893586315531935, 0.0, 0.5536892042543795, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     )
+    # L = 3
+    # Y = np.array([1, 0.6, 0.6, 0.3, 0.6, 0.3, 0, 0])
+    Y = (Y*1e4).astype(int)
     print(list(Y))
+
+    test_y_range(
+        Y, L,
+        rfunc=lower,
+    )
     # test_y_rand(Y, L)
 
     # L = 2
     # Y = np.array([1, 0.6, 0, 0])
 
 
-    test_float_y(
-        L, Y, 
-        medium,
-        # lower,
-        # upper,
-    )
+    # test_float_y(
+    #     L, Y, 
+    #     # medium,
+    #     lower,
+    #     # upper,
+    # )
 
 
 if __name__ == "__main__":
