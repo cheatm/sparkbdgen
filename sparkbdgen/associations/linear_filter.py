@@ -1226,7 +1226,75 @@ def ex_combinations(L: int, independents: list):
             break
 
 
-def test_y_range(Y: np.ndarray, L: int, independents: list=None, rfunc=uniform):
+def start_points(index: list, size: int):
+    l = len(index)
+    i = 0
+    s = 0
+    points = np.zeros((size - l,), int)
+    p = 0
+    while i < l and s < size:
+        if s < index[i]:
+            points[p] = s
+            p += 1
+        else:
+            i += 1
+        s += 1
+    
+    while s < size:
+        points[p] = s
+        s += 1
+        
+    return points        
+
+
+def expand_combinations(EV: np.ndarray, columns: list, index: list):
+
+    tags = [False] * len(columns)
+
+    size = len(index)
+    for tags in iter_expand_tags(EV, index, tags, len(columns)):
+        comb = [0] * size
+        c = 0
+        for i, t in enumerate(tags):
+            if t:
+                comb[c] = i
+                c += 1
+
+        yield comb     
+    
+
+def iter_expand_tags(A: np.ndarray, index: list, tags: list, M: int):
+
+    if len(index) == 1:
+        n = index[0]
+        for m in reversed(range(M)):
+            if A[n, m] != 0 and not tags[m]:
+                tags[m] = True
+                yield tags
+                tags[m] = False
+
+        return
+    
+    n = index[-1]
+    for m in reversed(range(M)):
+        if A[n, m] != 0 and not tags[m]:
+            tags[m] = True
+            yield from iter_expand_tags(A, index[:-1], tags, M)
+            tags[m] = False
+
+
+def levelfill(A: np.ndarray, L: int, level: int, start: int=0):
+    if level < L:
+        mid = 1 << (L-1)
+        levelfill(A, L-1, level, start)
+        levelfill(A, L-1, level, start+mid)
+        return
+    
+    mid = 1 << (L-1)
+    A[start:start+mid] = A[start:start+mid] + A[start+mid:start+mid+mid]
+
+
+def test_y_range(Y: np.ndarray, L: int, independents: list=None, rfunc=uniform, results: dict=None):
     dependents = []
     if not independents:
         independents = []
@@ -1261,32 +1329,37 @@ def test_y_range(Y: np.ndarray, L: int, independents: list=None, rfunc=uniform):
         if EY[i] == 0:
             EY[i] = 10000
     
-    df = pd.DataFrame(EX)
-    df["Y"] = EY
-    print(df)
+    # df = pd.DataFrame(EX)
+    # df["Y"] = EY
+    # print(df)
+    size = 1 << L
+    REX = solveY(EX, L)[:, size:]
 
-    comb = [0, 1, 2, 7, 8, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24]
-    print(df[comb])
-
-    EX = solveY(EX, L)
+    rdf = pd.DataFrame(REX, columns=independents)
     EY = solveY(EY, L)
+    rdf["Y"] = EY
+    # print(edf)
+    
+    print(rdf)
+    if results:
+        for n, x in results.items():
+            rdf["Y"] -= rdf.pop(n) * x
+        print(rdf)
 
-    df = pd.DataFrame(EX)
-    df["Y"] = EY
-    print(df[comb])
+    levelfill(REX, L, L-3)
+    levelfill(EY, L, L-3)
+    # levelfill(REX, L, L-3)
+    # levelfill(EY, L, L-3)
+    # mid = 1 << (L-1)
+    # REX[:mid] = REX[:mid] + REX[mid:]
+    # EY[:mid] = EY[:mid] + EY[mid:]
 
-
-    # for index in ex_combinations(L, independents):
-    #     print(index)
-
-    # R = A.dot(X).astype(int)
-    # rdf = pd.DataFrame({
-    #     "Y": Y,
-    #     "R": R,
-    #     "X": X
-    # })
-
-    # print(rdf)
+    rdf = pd.DataFrame(REX, columns=independents)
+    rdf["Y"] = EY
+    if results:
+        for n, x in results.items():
+            rdf["Y"] -= rdf.pop(n) * x
+    print(rdf)
 
 
 def main():
@@ -1351,6 +1424,17 @@ def main():
     test_y_range(
         Y, L,
         rfunc=lower,
+        results= {
+            3: 5894,
+            7: 7214,
+            9: 5217,
+            10: 5894-107,
+            11: 5894,
+            12: 7214-753,
+            13: 7214,
+            14: 7214-107,
+            15: 7214
+        }
     )
     # test_y_rand(Y, L)
 
