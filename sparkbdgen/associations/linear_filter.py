@@ -1294,6 +1294,10 @@ def levelfill(A: np.ndarray, L: int, level: int, start: int=0):
     A[start:start+mid] = A[start:start+mid] + A[start+mid:start+mid+mid]
 
 
+# def show_range(A: np.ndarray, Y: np.ndarray, L: int, n: int):
+    
+
+
 def test_y_range(Y: np.ndarray, L: int, independents: list=None, rfunc=uniform, results: dict=None):
     dependents = []
     if not independents:
@@ -1341,25 +1345,67 @@ def test_y_range(Y: np.ndarray, L: int, independents: list=None, rfunc=uniform, 
     # print(edf)
     
     print(rdf)
-    if results:
-        for n, x in results.items():
-            rdf["Y"] -= rdf.pop(n) * x
-        print(rdf)
 
-    levelfill(REX, L, L-3)
-    levelfill(EY, L, L-3)
-    # levelfill(REX, L, L-3)
-    # levelfill(EY, L, L-3)
-    # mid = 1 << (L-1)
-    # REX[:mid] = REX[:mid] + REX[mid:]
-    # EY[:mid] = EY[:mid] + EY[mid:]
+    mid = 1 << (L-1)
 
-    rdf = pd.DataFrame(REX, columns=independents)
-    rdf["Y"] = EY
-    if results:
-        for n, x in results.items():
-            rdf["Y"] -= rdf.pop(n) * x
-    print(rdf)
+    # for i in range(6):    
+    #     REX[i+1, :] += REX[i, :]
+    #     EY[i+1] += EY[i]
+    #     REX[i+1 + mid, :] += REX[i+mid, :]
+    #     EY[i+1+mid] += EY[i+mid]
+
+    # X = np.array(
+    #     [0, 0, 0, 0, 0, 0, 9911],
+    #     int
+    # )
+
+    # xindex = [0, 1, 2, 3, 4, 5]
+
+    # # EY -= REX.dot(X)
+    
+    # rdf = pd.DataFrame(REX[:, xindex], columns=[independents[i] for i in xindex])
+    # rdf["Y"] = EY
+    # print(rdf)
+    # # mid = 1 << (L-1)
+
+    # rg = pd.DataFrame({
+    #     "minimum": -EY[:mid],
+    #     "maximum": EY[mid:],
+    # })
+    # rg["space"] = rg["maximum"] - rg["minimum"]
+    # print(rg)
+
+    # for i in []:
+    #     levelfill(REX, L, L-i)
+    #     levelfill(EY, L, L-i)
+    # EY = rdf["Y"].values
+    # for i, j in [
+    #     (1, 0),
+    #     (2, 1),
+    #     (3, 2),
+    #     (4, 3),
+    #     (5, 4),
+    #     (6, 5)
+    # ]:
+    #     REX[i] += REX[j]
+    #     EY[i] += EY[j]
+
+    # rdf = pd.DataFrame(REX, columns=independents)
+    # rdf["Y"] = EY
+    # if results:
+    #     for n, x in results.items():
+    #         rdf["Y"] -= rdf.pop(n) * x
+
+    #     # x = 9
+    #     # for i in [0, 8]:
+    #     #     if rdf.loc[i, x] == -1:
+    #     #         rdf.loc[i, x] += 1
+    #     #         rdf.loc[i, "Y"] += 7214
+    #     #     elif rdf.loc[i, x] == 1:
+    #     #         rdf.loc[i, x] += -1
+    #     #         rdf.loc[i, "Y"] += -5217
+
+    # print(rdf)
 
 
 def main():
@@ -1415,6 +1461,7 @@ def main():
     # # Y = np.array([1.0, 0.64, 0.53, 0.53, 0, 0.39, 0.39, 0.0])
     Y = np.array(
         [1.0, 0.4783623722876001, 0.42135025029614215, 0.0, 0.5590830726336207, 0.27860867671873163, 0.2893586315531935, 0.0, 0.5536892042543795, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        # [1.0, 0.4783623722876001, 0.42135025029614215, 0.0089, 0.5590830726336207, 0.27860867671873163, 0.2893586315531935, 0.0089, 0.5536892042543795, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     )
     # L = 3
     # Y = np.array([1, 0.6, 0.6, 0.3, 0.6, 0.3, 0, 0])
@@ -1424,30 +1471,8 @@ def main():
     test_y_range(
         Y, L,
         rfunc=lower,
-        results= {
-            3: 5894,
-            7: 7214,
-            9: 5217,
-            10: 5894-107,
-            11: 5894,
-            12: 7214-753,
-            13: 7214,
-            14: 7214-107,
-            15: 7214
-        }
     )
-    # test_y_rand(Y, L)
 
-    # L = 2
-    # Y = np.array([1, 0.6, 0, 0])
-
-
-    # test_float_y(
-    #     L, Y, 
-    #     # medium,
-    #     lower,
-    #     # upper,
-    # )
 
 
 if __name__ == "__main__":
